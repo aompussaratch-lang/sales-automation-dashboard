@@ -1,11 +1,11 @@
 // API client สำหรับ sales_summary_dashboard.jsx <-> backend FastAPI (ดู backend/README.md)
 // Auth เป็น demo token คงที่ต่อ role (ยังไม่มีระบบ login จริง — ดู backend/app/auth.py)
 
-// ใช้ VITE_API_BASE ถ้ากำหนดไว้ ไม่งั้นเดาจาก hostname ที่เปิดหน้านี้อยู่ (เผื่อเข้าผ่าน LAN IP
-// ของเครื่องอื่น "http://localhost:8000" จะใช้ไม่ได้เพราะ localhost หมายถึงเครื่องผู้เปิดเอง)
+// ค่าว่าง ("") = ยิง request แบบ relative path ไปที่ origin เดียวกับหน้าเว็บเสมอ แล้วให้ Vite dev
+// server proxy ไปหา backend ให้ (ดู vite.config.js) — ใช้ได้ทั้ง localhost, LAN IP, และ Replit
+// โดยไม่ต้องเดา hostname/port เอง ตั้ง VITE_API_BASE ถ้าต้องการชี้ไป backend คนละที่จริงๆ (เช่น deploy แยก)
 export const API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) ||
-  (typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}:8000` : "http://localhost:8000");
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE) || "";
 
 const DEMO_TOKENS = {
   sales: "sales-demo-token",

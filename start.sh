@@ -14,7 +14,7 @@ cd ..
 echo "=== ติดตั้ง/รัน frontend (Vite) ==="
 cd frontend
 npm install --silent
-npm run dev -- --host 0.0.0.0 --port 5173 &
+npm run dev -- --host 0.0.0.0 --port 5000 &
 FRONTEND_PID=$!
 cd ..
 
