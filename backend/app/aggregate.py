@@ -139,10 +139,97 @@ def compute_manpower_calendar(confirmed_events: list[dict], date_from: date, dat
                 "date": cursor.isoformat(),
                 "count": len(jobs),
                 "totalPax": sum(j["pax"] for j in jobs),
-                "jobs": [{"type": j["job_type"] or "อื่นๆ", "pax": j["pax"], "time": j["time_of_day"]} for j in jobs],
+                "jobs": [
+                    {"type": j["job_type"] or "อื่นๆ", "room": j.get("location") or "-", "pax": j["pax"], "time": j["time_of_day"]}
+                    for j in jobs
+                ],
             })
         cursor += timedelta(days=1)
     return {"days": days}
+
+
+def compute_confirmed_stats(confirmed_events: list[dict]) -> dict:
+    """แจกแจงงาน Confirmed ตาม Sales และตามห้อง (location) — สองมิติที่มีข้อมูลจริงครบ ต่างจาก
+    ประเภทลูกค้า/ประเภทงานที่งาน Confirmed ส่วนใหญ่ไม่มีข้อมูล (ขึ้น "ไม่ระบุ" เกือบหมด)"""
+    return {
+        "bySales": _count_by(confirmed_events, "sales"),
+        "byRoom": _count_by(confirmed_events, "location", lambda v: v or "ไม่ระบุ"),
+    }
+
+
+FUNCTION_SHEET_LEAD_DAYS = 14
+
+
+def compute_function_sheet(confirmed_events: list[dict], issued_map: dict[str, str], today: date) -> dict:
+    """
+    สถานะการออก Function Sheet ต่องาน Confirmed — กฎ: ต้องออกก่อนวันจัดงานอย่างน้อย
+    FUNCTION_SHEET_LEAD_DAYS วัน ถ้ายังไม่ออกและเหลือน้อยกว่ากำหนด ถือว่า "ใกล้ครบกำหนด/เลยกำหนด"
+    """
+    items = []
+    not_issued_count = 0
+    urgent_count = 0
+
+    for e in confirmed_events:
+        event_date = e["date_obj"]
+        issued_at = issued_map.get(e["id"])
+        days_until = (event_date - today).days if event_date else None
+
+        if issued_at:
+            status = "issued"
+        elif days_until is not None and days_until <= FUNCTION_SHEET_LEAD_DAYS:
+            status = "urgent"
+        else:
+            status = "not_due"
+
+        if status != "issued":
+            not_issued_count += 1
+        if status == "urgent":
+            urgent_count += 1
+
+        items.append({
+            "id": e["id"],
+            "title": e["title"],
+            "date": e["date_obj"].isoformat() if e["date_obj"] else None,
+            "daysUntilEvent": days_until,
+            "sales": e["sales"],
+            "pax": e["pax"],
+            "issuedAt": issued_at,
+            "status": status,
+        })
+
+    items.sort(key=lambda it: (it["date"] or ""))
+    return {
+        "items": items,
+        "notIssuedCount": not_issued_count,
+        "urgentCount": urgent_count,
+    }
+
+
+def compute_data_quality(cancelled_rows: list[dict], calendar_events: list[dict]) -> dict:
+    """
+    "อ่านสำเร็จ" = แถวที่มีข้อมูลสำคัญครบ — งานยกเลิก: มี job_type, customer_type, pax ครบ
+    (สามข้อนี้แกะจากข้อความอิสระ จึงมีโอกาสแกะไม่ได้) — งาน Confirmed: มี pax (คอลัมน์ตรงอยู่แล้ว
+    แทบไม่มีโอกาสขาด, ที่เหลือเช่น job_type ยังไม่มี mapping จริงจึงไม่นับเป็น "ไม่สมบูรณ์")
+    """
+    total = len(cancelled_rows) + len(calendar_events)
+    incomplete = 0
+    for r in cancelled_rows:
+        if not r["job_type"] or not r["customer_type"] or not r["pax"]:
+            incomplete += 1
+    for e in calendar_events:
+        if not e["pax"]:
+            incomplete += 1
+
+    success = total - incomplete
+    pct = round(incomplete / total * 100, 1) if total else 0.0
+    success_pct = round(success / total * 100, 1) if total else 0.0
+    return {
+        "totalRead": total,
+        "successRead": success,
+        "successPct": success_pct,
+        "incomplete": incomplete,
+        "incompletePct": pct,
+    }
 
 
 def compute_events(cancelled_rows: list[dict], calendar_events: list[dict], filters: dict) -> dict:

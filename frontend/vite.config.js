@@ -5,7 +5,7 @@ import react from "@vitejs/plugin-react";
 // ไม่ว่าจะเปิดผ่าน localhost, LAN IP, หรือ Replit — proxy ทำงานฝั่ง Vite dev server เอง
 // จึงไม่ขึ้นกับว่า browser เปิดหน้าเว็บผ่าน hostname ไหน (แก้ปัญหาที่เจอบน Replit)
 const BACKEND = "http://localhost:8000";
-const PROXY_PATHS = ["/auth", "/uploads", "/drive", "/summary", "/reports", "/events"];
+const PROXY_PATHS = ["/auth", "/uploads", "/drive", "/summary", "/reports", "/events", "/function-sheet"];
 
 export default defineConfig({
   plugins: [react()],

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import openpyxl
 
-from .cancelled import CUSTOMER_RE, categorize_reason, find_job_type
+from .cancelled import CUSTOMER_RE, categorize_reason, find_job_type, make_event_id
 
 STATUS_MAP = {
     "cancelled": "Cancelled",
@@ -122,6 +122,8 @@ def _read_raw_rows(path: Path) -> list[dict]:
         time_text = ws.cell(row=r, column=5).value
         event_type_text = ws.cell(row=r, column=6).value
         event_type_text = str(event_type_text).strip() if event_type_text else None
+        location = ws.cell(row=r, column=7).value
+        location = str(location).strip() if location else None
         customer_name = ws.cell(row=r, column=8).value
         customer_name = str(customer_name).strip() if customer_name else None
         note = ws.cell(row=r, column=9).value
@@ -141,6 +143,7 @@ def _read_raw_rows(path: Path) -> list[dict]:
             "customer_type": customer_type,
             "time_of_day": _time_of_day(time_text),
             "event_type_text": event_type_text,
+            "location": location,
             "customer_name": customer_name,
             "note": note,
             "sales": sales,
@@ -183,6 +186,7 @@ def load_calendar_events(path: Path) -> list[dict]:
             continue
         title = " / ".join(p for p in [row["customer_name"], row["event_type_text"]] if p) or "(ไม่มีชื่องาน)"
         out.append({
+            "id": make_event_id(row["event_date"], title, row["sales"], row["pax"]),
             "date": row["event_date"].isoformat() if row["event_date"] else None,
             "date_obj": row["event_date"],
             "start": None,
@@ -191,6 +195,7 @@ def load_calendar_events(path: Path) -> list[dict]:
             "pax": row["pax"] or 0,
             "sales": row["sales"],
             "title": title,
+            "location": row["location"],
             "job_type": guess_job_type_from_event_type(row["event_type_text"]),
             "status": row["status"],
         })

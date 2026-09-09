@@ -31,6 +31,34 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def dedupe_cancelled(rows: list[dict]) -> list[dict]:
+    """ตัดรายการซ้ำ — ถือว่าซ้ำกันถ้าเลข QN ตรงกัน (แถวที่ไม่มี QN เก็บไว้ทั้งหมด เทียบไม่ได้)"""
+    seen: set[str] = set()
+    out = []
+    for r in rows:
+        qtn = r.get("qtn")
+        if qtn and qtn in seen:
+            continue
+        if qtn:
+            seen.add(qtn)
+        out.append(r)
+    return out
+
+
+def dedupe_calendar(events: list[dict]) -> list[dict]:
+    """ตัดรายการซ้ำ — ถือว่าซ้ำกันถ้า id ตรงกัน (id คำนวณจาก วันที่+ชื่องาน+sales+pax ดู parsing/cancelled.py::make_event_id)"""
+    seen: set[str] = set()
+    out = []
+    for e in events:
+        eid = e.get("id")
+        if eid and eid in seen:
+            continue
+        if eid:
+            seen.add(eid)
+        out.append(e)
+    return out
+
+
 class Store:
     def __init__(self):
         self.lock = threading.Lock()
@@ -39,12 +67,15 @@ class Store:
         self.upload_history: list[dict] = []
         self.jobs: dict[str, dict] = {}
         self.drive_status = {"status": "synced", "lastSyncAt": now_iso()}
+        # event id (จาก make_event_id) -> วันที่ออก Function Sheet (ISO date string) — ผู้ใช้กรอกเองผ่าน
+        # POST /function-sheet/{event_id} คงอยู่ข้าม re-upload เพราะ id คำนวณจากข้อมูลงานเอง ไม่ใช่ index
+        self.function_sheet_issued: dict[str, str] = {}
         self._seed()
 
     # -- seed จากไฟล์จริงที่มีอยู่แล้วในโปรเจกต์ ให้ dashboard มีข้อมูลให้ดูทันทีตั้งแต่แรก --
     def _seed(self):
         if config.SEED_CANCELLED_FILE.exists():
-            self.cancelled_rows = _parse_cancelled_file(config.SEED_CANCELLED_FILE)
+            self.cancelled_rows = dedupe_cancelled(_parse_cancelled_file(config.SEED_CANCELLED_FILE))
             self.upload_history.append({
                 "id": "up_seed_cancelled",
                 "fileName": config.SEED_CANCELLED_FILE.name,
@@ -56,7 +87,7 @@ class Store:
                 "rows": len(self.cancelled_rows),
             })
         if config.SEED_CALENDAR_FILE.exists():
-            self.calendar_events = _parse_calendar_file(config.SEED_CALENDAR_FILE, status="Confirmed")
+            self.calendar_events = dedupe_calendar(_parse_calendar_file(config.SEED_CALENDAR_FILE, status="Confirmed"))
             self.upload_history.append({
                 "id": "up_seed_calendar",
                 "fileName": config.SEED_CALENDAR_FILE.name,
@@ -70,13 +101,13 @@ class Store:
 
     # -- ingest ไฟล์ที่อัพโหลดเข้ามาจริง --
     def ingest_cancelled(self, path: Path):
-        rows = _parse_cancelled_file(path)
+        rows = dedupe_cancelled(_parse_cancelled_file(path))
         with self.lock:
             self.cancelled_rows = rows  # ไฟล์ Cancelled ใหม่แทนที่ชุดเดิมทั้งไฟล์ (export เต็มรอบเสมอ)
         return len(rows)
 
     def ingest_calendar(self, path: Path, status: str = "Confirmed"):
-        events = _parse_calendar_file(path, status=status)
+        events = dedupe_calendar(_parse_calendar_file(path, status=status))
         with self.lock:
             # แทนที่เฉพาะ event ของสถานะที่ปรากฏในไฟล์นี้ เพื่อรองรับการอัพโหลดหลายไฟล์แยกตามสถานะ
             # (ไฟล์รูปแบบเดิมมีสถานะเดียวทั้งไฟล์ตามพารามิเตอร์ status, ไฟล์รูปแบบใหม่มีสถานะจริงต่อแถว
@@ -90,8 +121,8 @@ class Store:
         ไฟล์รูปแบบใหม่ (ดู parsing/raw_export.py) มีทั้งแถว Cancelled และ Confirmed/Pending ปนกันได้ในไฟล์
         เดียว — ไม่ขึ้นกับว่าอัพโหลดเข้าช่อง "Cancelled" หรือ "Calendar" แยกฟิลด์ตามสถานะจริงในไฟล์เสมอ
         """
-        cancelled_rows = raw_export.load_cancelled_rows(path)
-        calendar_events = raw_export.load_calendar_events(path)
+        cancelled_rows = dedupe_cancelled(raw_export.load_cancelled_rows(path))
+        calendar_events = dedupe_calendar(raw_export.load_calendar_events(path))
         with self.lock:
             if cancelled_rows:
                 self.cancelled_rows = cancelled_rows
@@ -99,6 +130,13 @@ class Store:
                 statuses_in_file = {e["status"] for e in calendar_events}
                 self.calendar_events = [e for e in self.calendar_events if e["status"] not in statuses_in_file] + calendar_events
         return len(cancelled_rows) + len(calendar_events)
+
+    def set_function_sheet_issued(self, event_id: str, issued_at: str | None):
+        with self.lock:
+            if issued_at:
+                self.function_sheet_issued[event_id] = issued_at
+            else:
+                self.function_sheet_issued.pop(event_id, None)
 
     def add_upload_history(self, entry: dict):
         with self.lock:

@@ -52,7 +52,19 @@ export function api(role) {
     jobStatus: (from, to) => getJSON(`/summary/job-status${qs({ from, to })}`, role),
     paxBins: (from, to) => getJSON(`/summary/pax-bins${qs({ from, to })}`, role),
     manpowerCalendar: (from, to) => getJSON(`/summary/manpower-calendar${qs({ from, to })}`, role),
+    confirmedStats: (from, to) => getJSON(`/summary/confirmed-stats${qs({ from, to })}`, role),
+    dataQuality: () => getJSON("/summary/data-quality", role),
     events: (filters) => getJSON(`/events${qs(filters)}`, role),
+
+    functionSheetList: (from, to) => getJSON(`/function-sheet${qs({ from, to })}`, role),
+    async updateFunctionSheet(eventId, issuedAt) {
+      const res = await apiFetch(`/function-sheet/${eventId}`, {
+        role, method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ issuedAt }),
+      });
+      return res.json();
+    },
 
     uploadHistory: () => getJSON("/uploads/history", role),
     uploadStatus: (jobId) => getJSON(`/uploads/${jobId}/status`, role),

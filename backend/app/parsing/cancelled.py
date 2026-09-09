@@ -11,12 +11,20 @@ Parser สำหรับไฟล์ Cancelled (.xlsx) — ดัดแปล�
    keyword heuristic เบื้องต้น, และมีโค้ดประเภทงาน "EN" ที่ไม่อยู่ใน schema เดิม — ควรให้ทีมขายช่วยตรวจ
 """
 
+import hashlib
 import re
 from datetime import date, datetime
 from pathlib import Path
 
 import openpyxl
 from openpyxl.utils import get_column_letter
+
+
+def make_event_id(*parts) -> str:
+    """ID คงที่จาก field ที่ระบุตัวงานได้ (เช่น วันที่+ชื่องาน+sales+pax) — ใช้ผูกสถานะที่บันทึกไว้
+    เอง (เช่น วันที่ออก Function Sheet) ให้ยังจับคู่ถูกงานเดิมได้ แม้ไฟล์จะถูกอัปโหลดซ้ำ"""
+    key = "|".join(str(p) for p in parts)
+    return hashlib.md5(key.encode("utf-8")).hexdigest()[:12]
 
 HEADER_ROW = 7
 COL_QTN = "A"

@@ -19,7 +19,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
-from .cancelled import JOB_CODES, find_job_type  # noqa: F401 (reuse เดียวกับ Cancelled.xlsx)
+from .cancelled import JOB_CODES, find_job_type, make_event_id  # noqa: F401 (reuse เดียวกับ Cancelled.xlsx)
 
 EVENT_RE = re.compile(
     r"(?P<title>.*?)\((?P<start>\d{1,2}:\d{2})\s*-\s*(?P<end>\d{1,2}:\d{2})\)(?P<pax>[\d,]+)\s*Pax\s*/(?P<sales>[^\-]+?)(?=\s*-\s*[^\d]|$)",
@@ -53,6 +53,7 @@ def parse_cell_events(text: str, date_str: str, date_obj: date, status: str) -> 
         job_type, _ = find_job_type(title)
         events.append(
             {
+                "id": make_event_id(date_obj, title, sales, pax),
                 "date": date_str,
                 "date_obj": date_obj,
                 "start": m.group("start"),
@@ -61,6 +62,7 @@ def parse_cell_events(text: str, date_str: str, date_obj: date, status: str) -> 
                 "pax": pax,
                 "sales": sales or None,
                 "title": title,
+                "location": None,  # ไฟล์รูปแบบเดิมไม่มีคอลัมน์ห้อง
                 "job_type": job_type,
                 "status": status,
             }

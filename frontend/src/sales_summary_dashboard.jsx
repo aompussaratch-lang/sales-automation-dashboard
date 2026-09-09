@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   LayoutGrid, Upload, BarChart3, History, Palette, Bell, Users, LogOut, Menu, Search,
-  RefreshCw, Download, ChevronDown, ChevronLeft, ChevronRight, XCircle, UserX, Briefcase, Award, FileSpreadsheet,
+  RefreshCw, Download, ChevronDown, ChevronLeft, ChevronRight, XCircle, Briefcase, Award, FileSpreadsheet,
   FileText, CheckCircle2, AlertCircle, Cloud,
 } from "lucide-react";
 import { api, pollUploadStatus } from "./api";
@@ -47,15 +47,6 @@ const FONT = "'Noto Sans Thai', sans-serif";
 // SalesSummaryDashboard ด้านล่าง) แทน mock data เดิมที่เคย hardcode ไว้ตรงนี้
 // ---------------------------------------------------------------------------
 const CHART_PALETTE = [chartBlue, yellow, green, purple, red, grayNeutral];
-
-// ช่วง pax ต่อ bin ตรงกับ bin_pax() ใน backend/app/parsing/calendar.py — ใช้แปลง bin ที่คลิกกลับเป็น
-// paxMin/paxMax สำหรับ query GET /events ตอน drill-down
-const PAX_BIN_RANGES = {
-  "<150 คน": { paxMin: 0, paxMax: 149 },
-  "150-300 คน": { paxMin: 150, paxMax: 300 },
-  "301-500 คน": { paxMin: 301, paxMax: 500 },
-  ">500 คน": { paxMin: 501, paxMax: undefined },
-};
 
 const PROCESSING_STAGES = ["กำลังอัพโหลดไฟล์", "กำลังตรวจสอบและประมวลผลข้อมูล", "กำลังซิงก์ขึ้น Google Drive"];
 const STAGE_INDEX = { uploading: 0, parsing: 1, syncing_drive: 2 };
@@ -286,6 +277,7 @@ function EmptyState({ onUpload, processing, canUpload }) {
 
 const NAV_ITEMS = [
   { key: "overview", label: "ภาพรวม", icon: LayoutGrid },
+  { key: "functionsheet", label: "อัปเดตสถานะ Function Sheet", icon: FileText },
   { key: "upload", label: "อัปโหลดข้อมูล", icon: Upload },
   { key: "reports", label: "รายงาน", icon: BarChart3 },
   { key: "history", label: "ประวัติการอัปโหลด", icon: History },
@@ -293,6 +285,94 @@ const NAV_ITEMS = [
   { key: "alerts", label: "ตั้งค่าแจ้งเตือน", icon: Bell },
   { key: "users", label: "ผู้ใช้งาน", icon: Users },
 ];
+
+const FS_STATUS_LABEL = { issued: "ออกแล้ว", not_due: "ยังไม่ถึงกำหนด", urgent: "ใกล้ครบกำหนด/เลยกำหนด" };
+const FS_STATUS_COLOR = { issued: green, not_due: inkFaint, urgent: redText };
+
+// ---------------------------------------------------------------------------
+// หน้า "อัปเดตสถานะ Function Sheet" — ตารางงาน Confirmed พร้อมกรอกวันที่ออก Function Sheet ทีละงาน
+// ---------------------------------------------------------------------------
+function FunctionSheetPage({ role, dateFrom, dateTo }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [savingId, setSavingId] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api(role).functionSheetList(dateFrom, dateTo)
+      .then((res) => setItems(res.items))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [role, dateFrom, dateTo]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleSave(id, value) {
+    setSavingId(id);
+    try {
+      await api(role).updateFunctionSheet(id, value || null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  return (
+    <Card>
+      <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-1">อัปเดตสถานะ Function Sheet</p>
+      <p style={{ color: inkFaint }} className="text-xs mb-4">Function Sheet ต้องออกก่อนวันจัดงานอย่างน้อย 14 วัน — กรอกวันที่ออกแล้วกดบันทึกทีละงาน</p>
+      {error && <p style={{ color: redText }} className="text-xs mb-3">{error}</p>}
+      {loading ? (
+        <p style={{ color: inkFaint }} className="text-sm py-4">กำลังโหลด...</p>
+      ) : items.length === 0 ? (
+        <p style={{ color: inkFaint }} className="text-sm py-4">ไม่มีงาน Confirmed ในช่วงวันที่ที่เลือก</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${line}` }}>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">ชื่องาน</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">วันจัดงาน</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">Sales</th>
+                <th style={{ color: inkFaint }} className="text-right font-normal py-2 text-xs">จำนวนคน</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">สถานะ</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">วันที่ออก Function Sheet</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id} style={{ borderBottom: `1px solid ${line}` }}>
+                  <td style={{ color: ink }} className="py-2 max-w-[220px] truncate" title={it.title}>{it.title}</td>
+                  <td style={{ color: ink }} className="py-2 whitespace-nowrap">{it.date}</td>
+                  <td style={{ color: inkSoft }} className="py-2">{it.sales || "-"}</td>
+                  <td style={{ color: ink }} className="py-2 text-right">{it.pax}</td>
+                  <td className="py-2">
+                    <span style={{ color: FS_STATUS_COLOR[it.status] }} className="text-xs font-medium">
+                      {FS_STATUS_LABEL[it.status]}
+                    </span>
+                  </td>
+                  <td className="py-2">
+                    <input
+                      type="date"
+                      defaultValue={it.issuedAt || ""}
+                      disabled={savingId === it.id}
+                      onBlur={(e) => { if (e.target.value !== (it.issuedAt || "")) handleSave(it.id, e.target.value); }}
+                      style={{ border: `1px solid ${line}`, borderRadius: 6 }}
+                      className="px-2 py-1 text-xs"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -326,17 +406,18 @@ export default function SalesSummaryDashboard() {
   const [kpi, setKpi] = useState(null);
   const [cancellations, setCancellations] = useState(null);
   const [jobStatusData, setJobStatusData] = useState([]);
-  const [paxBinData, setPaxBinData] = useState([]);
   const [manpowerDays, setManpowerDays] = useState([]);
+  const [confirmedStats, setConfirmedStats] = useState(null);
+  const [dataQuality, setDataQuality] = useState(null);
+  const [fsSummary, setFsSummary] = useState({ notIssuedCount: 0, urgentCount: 0 });
 
   const [selectedCustomerType, setSelectedCustomerType] = useState(null);
   const [selectedJobTypeCancel, setSelectedJobTypeCancel] = useState(null);
   const [selectedStatusSegment, setSelectedStatusSegment] = useState(null);
-  const [selectedPaxBin, setSelectedPaxBin] = useState(null);
   const [selectedDay, setSelectedDay] = useState(null);
   const [showManpowerDetail, setShowManpowerDetail] = useState(true);
-  const [detailRows, setDetailRows] = useState({ customerType: [], jobType: [], status: [], paxBin: [] });
-  const [detailLoading, setDetailLoading] = useState({ customerType: false, jobType: false, status: false, paxBin: false });
+  const [detailRows, setDetailRows] = useState({ customerType: [], jobType: [], status: [] });
+  const [detailLoading, setDetailLoading] = useState({ customerType: false, jobType: false, status: false });
 
   const customerTypeData = useMemo(
     () => (cancellations?.byCustomerType || []).map((d, i) => ({ ...d, color: CHART_PALETTE[i % CHART_PALETTE.length] })),
@@ -348,15 +429,27 @@ export default function SalesSummaryDashboard() {
   const totalReasons = cancelReasons.reduce((a, b) => a + b.count, 0) || 1;
 
   const totalCancelledJobs = kpi?.cancelledJobs?.current ?? 0;
-  const totalCancelledCustomers = kpi?.cancelledCustomers?.current ?? 0;
   const topJobType = jobTypeCancelData[0] || { name: "-", value: 0 };
   const topSales = salesRanking[0] || { name: "-", count: 0 };
 
   const totalConfirmedJobs = kpi?.confirmedTotal?.current ?? 0;
-  const totalConfirmedPax = useMemo(
-    () => (manpowerDays || []).reduce((s, d) => s + (d.totalPax || 0), 0),
-    [manpowerDays]
-  );
+
+  // สัดส่วนสถานะโดยรวม (Confirmed/Pending/Cancelled) — รวมจาก jobStatusData ที่มีอยู่แล้ว ไม่ต้องยิง API เพิ่ม
+  const overallStatusData = useMemo(() => {
+    const totals = jobStatusData.reduce(
+      (acc, r) => ({ confirmed: acc.confirmed + r.confirmed, pending: acc.pending + r.pending, cancelled: acc.cancelled + r.cancelled }),
+      { confirmed: 0, pending: 0, cancelled: 0 }
+    );
+    return [
+      { name: "Confirmed", value: totals.confirmed, color: green },
+      { name: "Pending", value: totals.pending, color: yellow },
+      { name: "Cancelled", value: totals.cancelled, color: red },
+    ].filter((d) => d.value > 0);
+  }, [jobStatusData]);
+  const overallStatusTotal = overallStatusData.reduce((a, b) => a + b.value, 0) || 1;
+
+  const confirmedBySales = confirmedStats?.bySales || [];
+  const confirmedByRoom = confirmedStats?.byRoom || [];
 
   const nextReminder = useMemo(() => getNextSaturday9am(), []);
   const daysUntilReminder = useMemo(() => Math.max(0, Math.ceil((nextReminder - new Date()) / 86400000)), [nextReminder]);
@@ -397,20 +490,24 @@ export default function SalesSummaryDashboard() {
   // ดึงข้อมูลสรุปทั้งหมดสำหรับ dashboard จาก backend ตามช่วงวันที่/role ที่เลือก
   const loadSummary = useCallback(async () => {
     const client = api(role);
-    const [kpiRes, cancelRes, jobStatusRes, paxRes, manpowerRes, driveRes, historyRes] = await Promise.all([
+    const [kpiRes, cancelRes, jobStatusRes, manpowerRes, confirmedStatsRes, qualityRes, fsRes, driveRes, historyRes] = await Promise.all([
       client.kpi(dateFrom, dateTo),
       client.cancellations(dateFrom, dateTo),
       client.jobStatus(dateFrom, dateTo),
-      client.paxBins(dateFrom, dateTo),
       client.manpowerCalendar(dateFrom, dateTo),
+      client.confirmedStats(dateFrom, dateTo),
+      client.dataQuality(),
+      client.functionSheetList(dateFrom, dateTo),
       client.driveStatus(),
       canUpload ? client.uploadHistory() : Promise.resolve({ items: [] }),
     ]);
     setKpi(kpiRes);
     setCancellations(cancelRes);
     setJobStatusData(jobStatusRes.data);
-    setPaxBinData(paxRes.bins);
     setManpowerDays(manpowerRes.days);
+    setConfirmedStats(confirmedStatsRes);
+    setDataQuality(qualityRes);
+    setFsSummary({ notIssuedCount: fsRes.notIssuedCount, urgentCount: fsRes.urgentCount });
     setDriveStatus(driveRes.status);
     setDriveLastSync(formatThaiDateTime(driveRes.lastSyncAt));
     setUploadHistory(historyRes.items.map((h) => ({ ...h, uploadedAt: formatThaiDateTime(h.uploadedAt) })));
@@ -461,18 +558,6 @@ export default function SalesSummaryDashboard() {
       .finally(() => { if (!ignore) setDetailLoading((s) => ({ ...s, status: false })); });
     return () => { ignore = true; };
   }, [selectedStatusSegment, dateFrom, dateTo, role]);
-
-  useEffect(() => {
-    if (!selectedPaxBin) { setDetailRows((s) => ({ ...s, paxBin: [] })); return; }
-    let ignore = false;
-    setDetailLoading((s) => ({ ...s, paxBin: true }));
-    const range = PAX_BIN_RANGES[selectedPaxBin] || {};
-    api(role).events({ from: dateFrom, to: dateTo, status: "confirmed", paxMin: range.paxMin, paxMax: range.paxMax })
-      .then((res) => { if (!ignore) setDetailRows((s) => ({ ...s, paxBin: res.items })); })
-      .catch(() => { if (!ignore) setDetailRows((s) => ({ ...s, paxBin: [] })); })
-      .finally(() => { if (!ignore) setDetailLoading((s) => ({ ...s, paxBin: false })); });
-    return () => { ignore = true; };
-  }, [selectedPaxBin, dateFrom, dateTo, role]);
 
   function handleRefresh() {
     setRefreshing(true);
@@ -561,7 +646,9 @@ export default function SalesSummaryDashboard() {
                 key={item.key}
                 onClick={() => {
                   setActiveNav(item.key);
-                  if (item.key !== "overview") showToast(`หน้า "${item.label}" ยังไม่ได้สร้างในต้นแบบนี้`);
+                  if (item.key !== "overview" && item.key !== "functionsheet") {
+                    showToast(`หน้า "${item.label}" ยังไม่ได้สร้างในต้นแบบนี้`);
+                  }
                 }}
                 style={{ background: active ? sidebarActiveBg : "transparent", color: active ? "#fff" : sidebarText }}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-left"
@@ -594,11 +681,7 @@ export default function SalesSummaryDashboard() {
           <p style={{ color: sidebarTextDim }} className="text-xs mb-2 px-1">ตัวกรองด่วน</p>
           <div className="flex flex-col gap-0.5">
             {[
-              { key: "today", label: "วันนี้" },
-              { key: "7days", label: "7 วันล่าสุด" },
               { key: "month", label: "เดือนนี้" },
-              { key: "lastmonth", label: "เดือนก่อน" },
-              { key: "3months", label: "3 เดือนล่าสุด" },
               { key: "custom", label: "กำหนดเอง" },
             ].map((f) => (
               <button
@@ -725,7 +808,9 @@ export default function SalesSummaryDashboard() {
             </Card>
           )}
 
-          {!hasData ? (
+          {activeNav === "functionsheet" ? (
+            <FunctionSheetPage role={role} dateFrom={dateFrom} dateTo={dateTo} />
+          ) : !hasData ? (
             <EmptyState onUpload={triggerUpload} processing={processing} canUpload={canUpload} />
           ) : (
           <>
@@ -742,17 +827,37 @@ export default function SalesSummaryDashboard() {
               trend={<TrendBadge current={totalConfirmedJobs} previous={kpi?.confirmedTotal?.previous ?? 0} goodDirection="up" />}
             />
             <KpiCard
-              icon={<Users size={18} style={{ color: navyPrimary }} />} iconBg={kpi4IconBg}
-              label="จำนวนคนรวม (งาน Confirmed)" value={totalConfirmedPax.toLocaleString()} unit="คน" valueColor={navyPrimary}
-              trend={<span style={{ color: inkSoft }} className="text-xs">ในช่วงวันที่ที่เลือก</span>}
+              icon={<FileText size={18} style={{ color: fsSummary.urgentCount > 0 ? redText : navyPrimary }} />} iconBg={fsSummary.urgentCount > 0 ? kpi1IconBg : kpi4IconBg}
+              label="งาน Confirmed ที่ยังไม่ออก FS" value={fsSummary.notIssuedCount} unit="งาน" valueColor={fsSummary.urgentCount > 0 ? redText : navyPrimary}
+              trend={
+                fsSummary.urgentCount > 0
+                  ? <span style={{ color: redText }} className="text-xs font-medium">⚠ {fsSummary.urgentCount} งานใกล้ครบกำหนด/เลยกำหนด</span>
+                  : <span style={{ color: inkSoft }} className="text-xs">ไม่มีงานเร่งด่วน</span>
+              }
             />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
             <Card>
+              <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-1">สัดส่วนสถานะงานโดยรวม</p>
+              <p style={{ color: inkFaint }} className="text-xs mb-3">รวมทุกประเภทงานในช่วงวันที่ที่เลือก</p>
+              <div className="relative mb-3">
+                <ResponsiveContainer width="100%" height={140}>
+                  <PieChart>
+                    <Pie data={overallStatusData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={58} paddingAngle={2}>
+                      {overallStatusData.map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ marginTop: -10 }}>
+                  <p style={{ color: ink, fontFamily: FONT }} className="text-xl font-bold">{overallStatusTotal}</p>
+                  <p style={{ color: inkFaint }} className="text-[10px]">งาน</p>
+                </div>
+              </div>
               <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-1">ประเภทงาน × สถานะ</p>
               <p style={{ color: inkFaint }} className="text-xs mb-3">ข้อมูลจริงจาก backend — "pending" จะมีค่าเมื่อมีไฟล์ปฏิทินที่ export สถานะ Not Confirm/Cut off เพิ่ม</p>
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={jobStatusData}>
                   <CartesianGrid stroke={line} vertical={false} />
                   <XAxis dataKey="name" tick={{ fill: inkFaint, fontSize: 11 }} axisLine={{ stroke: line }} tickLine={false} />
@@ -782,34 +887,38 @@ export default function SalesSummaryDashboard() {
             </Card>
 
             <Card>
-              <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-4">จำนวนงานตามช่วงจำนวนคน (Pax)</p>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={paxBinData}>
-                  <CartesianGrid stroke={line} vertical={false} />
-                  <XAxis dataKey="name" tick={{ fill: inkFaint, fontSize: 11 }} axisLine={{ stroke: line }} tickLine={false} />
-                  <YAxis tick={{ fill: inkFaint, fontSize: 11 }} axisLine={false} tickLine={false} />
+              <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-4">งาน Confirmed ตาม Sales</p>
+              <ResponsiveContainer width="100%" height={420}>
+                <BarChart data={confirmedBySales} layout="vertical" margin={{ left: 8 }}>
+                  <CartesianGrid stroke={line} horizontal={false} />
+                  <XAxis type="number" tick={{ fill: inkFaint, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: ink, fontSize: 11 }} axisLine={false} tickLine={false} width={110} />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
-                  <Bar dataKey="value" name="จำนวนงาน" fill={chartBlue} radius={[4, 4, 0, 0]} cursor="pointer"
-                    onClick={(d) => setSelectedPaxBin((prev) => (prev === d.name ? null : d.name))}
-                  />
+                  <Bar dataKey="value" name="จำนวนงาน" fill={chartBlue} radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-              {selectedPaxBin && (
-                <DetailList
-                  title={`ตัวอย่างงาน · ${selectedPaxBin}`}
-                  onClose={() => setSelectedPaxBin(null)}
-                  loading={detailLoading.paxBin}
-                  rows={detailRows.paxBin}
-                  columns={[{ key: "eventName", label: "ชื่องาน" }, { key: "jobType", label: "ประเภทงาน" }, { key: "status", label: "สถานะ" }]}
-                />
-              )}
             </Card>
 
+            <Card>
+              <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-4">งาน Confirmed ตามห้อง</p>
+              <ResponsiveContainer width="100%" height={420}>
+                <BarChart data={confirmedByRoom} layout="vertical" margin={{ left: 8 }}>
+                  <CartesianGrid stroke={line} horizontal={false} />
+                  <XAxis type="number" tick={{ fill: inkFaint, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: ink, fontSize: 11 }} axisLine={false} tickLine={false} width={110} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(0,0,0,0.03)" }} />
+                  <Bar dataKey="value" name="จำนวนงาน" fill={purple} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 mb-8">
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold">งาน Confirmed ตามเดือน</p>
-                  <p style={{ color: inkFaint }} className="text-xs">รวมรายวันในช่วงวันที่ที่เลือกเป็นรายเดือน (ข้อมูลจริงจาก /summary/manpower-calendar)</p>
+                  <p style={{ color: inkFaint }} className="text-xs">รวมรายวันในช่วงวันที่ที่เลือกเป็นรายเดือน (ข้อมูลจริงจาก /summary/manpower-calendar) — เป็นอิสระจากการเลื่อนเดือนในปฏิทินด้านล่าง</p>
                 </div>
                 <button onClick={() => setShowManpowerDetail((v) => !v)} style={{ color: navyPrimary }} className="text-xs underline shrink-0">
                   {showManpowerDetail ? "ซ่อนรายละเอียดรายวัน" : "ดูรายละเอียดรายวัน"}
@@ -890,6 +999,7 @@ export default function SalesSummaryDashboard() {
                           {selectedDay.jobs.map((j, i) => (
                             <tr key={i} style={{ borderBottom: i < selectedDay.jobs.length - 1 ? `1px solid ${line}` : "none" }}>
                               <td style={{ color: ink }} className="py-1.5">{j.type}</td>
+                              <td style={{ color: inkSoft }} className="py-1.5">{j.room || "-"}</td>
                               <td style={{ color: inkSoft }} className="py-1.5">{j.time}</td>
                               <td style={{ color: ink }} className="py-1.5 text-right">{j.pax} คน</td>
                             </tr>
@@ -914,11 +1024,6 @@ export default function SalesSummaryDashboard() {
               icon={<XCircle size={18} style={{ color: redText }} />} iconBg={kpi1IconBg}
               label="งานยกเลิกทั้งหมด" value={totalCancelledJobs} unit="งาน" valueColor={redText}
               trend={<TrendBadge current={totalCancelledJobs} previous={kpi?.cancelledJobs?.previous ?? 0} goodDirection="down" />}
-            />
-            <KpiCard
-              icon={<UserX size={18} style={{ color: "#E08A1E" }} />} iconBg={kpi2IconBg}
-              label="จำนวนลูกค้าที่ถูกยกเลิก" value={totalCancelledCustomers.toLocaleString()} unit="คน" valueColor="#E08A1E"
-              trend={<TrendBadge current={totalCancelledCustomers} previous={kpi?.cancelledCustomers?.previous ?? 0} goodDirection="down" />}
             />
             <KpiCard
               icon={<Briefcase size={18} style={{ color: green }} />} iconBg={kpi3IconBg}
@@ -1050,26 +1155,23 @@ export default function SalesSummaryDashboard() {
               </div>
             </Card>
 
-            {/* api_schema.md ไม่มี endpoint สำหรับ "คุณภาพข้อมูล" นี้โดยเฉพาะ ตัวเลขด้านล่างจึงยังเป็น
-                ค่าตัวอย่างคงที่ — ถ้าต้องการของจริงต้องเพิ่ม endpoint ใหม่ (เช่น ต่อยอดจาก unmatched
-                counts ที่ backend/app/parsing/cancelled.py คำนวณอยู่แล้วแต่ยังไม่ได้ expose ออกมา) */}
             <Card>
               <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-4">คุณภาพข้อมูล</p>
               <div className="flex flex-col gap-2.5 text-sm">
                 <div className="flex items-center gap-2">
                   <span style={{ width: 7, height: 7, borderRadius: 999, background: chartBlue }} />
                   <span style={{ color: inkSoft }}>อ่านข้อมูลทั้งหมด</span>
-                  <span style={{ color: ink }} className="ml-auto font-medium">3,595 รายการ</span>
+                  <span style={{ color: ink }} className="ml-auto font-medium">{(dataQuality?.totalRead ?? 0).toLocaleString()} รายการ</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 size={13} style={{ color: green }} />
                   <span style={{ color: inkSoft }}>อ่านสำเร็จ</span>
-                  <span style={{ color: ink }} className="ml-auto font-medium">3,512 รายการ (97.7%)</span>
+                  <span style={{ color: ink }} className="ml-auto font-medium">{(dataQuality?.successRead ?? 0).toLocaleString()} รายการ ({dataQuality?.successPct ?? 0}%)</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <AlertCircle size={13} style={{ color: yellow }} />
                   <span style={{ color: inkSoft }}>ข้อมูลไม่สมบูรณ์</span>
-                  <span style={{ color: ink }} className="ml-auto font-medium">83 รายการ (2.3%)</span>
+                  <span style={{ color: ink }} className="ml-auto font-medium">{(dataQuality?.incomplete ?? 0).toLocaleString()} รายการ ({dataQuality?.incompletePct ?? 0}%)</span>
                 </div>
               </div>
             </Card>

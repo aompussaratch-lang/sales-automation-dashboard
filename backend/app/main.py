@@ -11,6 +11,7 @@ from datetime import date
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from . import aggregate, config
 from .auth import get_current_user, require_roles
@@ -191,6 +192,43 @@ def summary_manpower_calendar(from_: str | None = Query(None, alias="from"), to:
     d_from, d_to = date_range(from_, to)
     confirmed = aggregate.filter_calendar(store.calendar_events, d_from, d_to, status="Confirmed")
     return aggregate.compute_manpower_calendar(confirmed, d_from, d_to)
+
+
+@app.get("/summary/confirmed-stats")
+def summary_confirmed_stats(from_: str | None = Query(None, alias="from"), to: str | None = None, user: dict = Depends(require_roles("sales", "manager", "executive"))):
+    d_from, d_to = date_range(from_, to)
+    confirmed = aggregate.filter_calendar(store.calendar_events, d_from, d_to, status="Confirmed")
+    return aggregate.compute_confirmed_stats(confirmed)
+
+
+@app.get("/summary/data-quality")
+def summary_data_quality(user: dict = Depends(require_roles("sales", "manager", "executive"))):
+    return aggregate.compute_data_quality(store.cancelled_rows, store.calendar_events)
+
+
+# ---------------------------------------------------------------------------
+# Function Sheet — เอกสารระบุรายละเอียดงานที่ต้องออกให้ฝ่ายปฏิบัติการก่อนวันงานอย่างน้อย 14 วัน
+# ---------------------------------------------------------------------------
+@app.get("/function-sheet")
+def function_sheet_list(from_: str | None = Query(None, alias="from"), to: str | None = None, user: dict = Depends(require_roles("sales", "manager", "executive"))):
+    d_from, d_to = date_range(from_, to)
+    confirmed = aggregate.filter_calendar(store.calendar_events, d_from, d_to, status="Confirmed")
+    return aggregate.compute_function_sheet(confirmed, store.function_sheet_issued, date.today())
+
+
+class FunctionSheetUpdate(BaseModel):
+    issuedAt: str | None = None  # ISO date string, หรือ None เพื่อล้างค่า (ยังไม่ออก)
+
+
+@app.post("/function-sheet/{event_id}")
+def function_sheet_update(event_id: str, body: FunctionSheetUpdate, user: dict = Depends(require_roles("sales", "manager", "executive"))):
+    if body.issuedAt:
+        try:
+            date.fromisoformat(body.issuedAt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="issuedAt ต้องเป็นวันที่รูปแบบ YYYY-MM-DD")
+    store.set_function_sheet_issued(event_id, body.issuedAt)
+    return {"id": event_id, "issuedAt": body.issuedAt}
 
 
 # ---------------------------------------------------------------------------
