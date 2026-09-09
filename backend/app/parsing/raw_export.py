@@ -31,6 +31,7 @@ STATUS_MAP = {
     "cancel": "Cancelled",
     "comfirmed": "Confirmed",  # สะกดผิดในไฟล์จริง
     "confirmed": "Confirmed",
+    "ยืนยัน": "Confirmed",  # บางไฟล์ export ใช้คำภาษาไทยแทน
     "tentative": "Pending",
     "not confirm": "Pending",
     "cut off": "Pending",
