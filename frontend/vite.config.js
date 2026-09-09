@@ -13,5 +13,8 @@ export default defineConfig({
     port: 5000,
     host: "0.0.0.0",
     proxy: Object.fromEntries(PROXY_PATHS.map((p) => [p, { target: BACKEND, changeOrigin: true }])),
+    // Replit เสิร์ฟ preview ผ่านโดเมนสุ่ม (xxxx.replit.dev / xxxx.sisko.replit.dev) — Vite เช็ค Host
+    // header เป็นค่าเริ่มต้น (กัน DNS rebinding) ต้อง allowlist โดเมนของ Replit ไว้ตรงนี้
+    allowedHosts: [".replit.dev", ".repl.co"],
   },
 });
