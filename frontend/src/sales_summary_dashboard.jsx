@@ -375,6 +375,123 @@ function FunctionSheetPage({ role, dateFrom, dateTo }) {
 }
 
 // ---------------------------------------------------------------------------
+// หน้า "อัปโหลดข้อมูล" — กรอกงานทีละรายการด้วยมือ (ทางเลือกแทนอัปโหลดไฟล์ ระหว่างที่ปุ่มอัปโหลด
+// ไฟล์ในเบราว์เซอร์ยังมีปัญหาเฉพาะบางสภาพแวดล้อม — ไม่ใช้ file input เลยจึงไม่เจอปัญหาเดียวกัน)
+// ---------------------------------------------------------------------------
+const EMPTY_MANUAL_FORM = {
+  status: "Cancelled",
+  date: "",
+  customerName: "",
+  customerType: "",
+  jobType: "",
+  pax: "",
+  sales: "",
+  reason: "",
+  location: "",
+};
+
+function ManualEntryPage({ role, onSaved }) {
+  const [form, setForm] = useState(EMPTY_MANUAL_FORM);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  function set(key, value) { setForm((f) => ({ ...f, [key]: value })); }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.date) { setMessage({ type: "error", text: "กรุณาเลือกวันที่" }); return; }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(role).manualEntry({
+        status: form.status,
+        date: form.date,
+        customerName: form.customerName || null,
+        customerType: form.customerType || null,
+        jobType: form.jobType || null,
+        pax: form.pax ? Number(form.pax) : null,
+        sales: form.sales || null,
+        reason: form.reason || null,
+        location: form.location || null,
+      });
+      setMessage({ type: "success", text: "บันทึกงานสำเร็จแล้ว" });
+      setForm(EMPTY_MANUAL_FORM);
+      onSaved?.();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { border: `1px solid ${line}`, borderRadius: 8 };
+
+  return (
+    <Card style={{ maxWidth: 560 }}>
+      <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-1">อัปโหลดข้อมูล — กรอกทีละรายการ</p>
+      <p style={{ color: inkFaint }} className="text-xs mb-4">
+        ทางเลือกสำหรับเพิ่มงานทีละรายการด้วยมือ (ไม่แทนที่ไฟล์ที่อัปโหลดไว้ — แค่เพิ่มเข้าไป)
+        ถ้าต้องการนำเข้าทีละหลายรายการ ใช้ปุ่ม "อัปโหลดไฟล์" มุมขวาบนแทน
+      </p>
+      {message && (
+        <p style={{ color: message.type === "success" ? green : redText }} className="text-xs mb-3">{message.text}</p>
+      )}
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">สถานะ</label>
+          <select value={form.status} onChange={(e) => set("status", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm">
+            <option value="Cancelled">ยกเลิก (Cancelled)</option>
+            <option value="Confirmed">ยืนยันแล้ว (Confirmed)</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">วันที่จัดงาน *</label>
+          <input type="date" required value={form.date} onChange={(e) => set("date", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">ชื่อลูกค้า/ชื่องาน</label>
+          <input type="text" value={form.customerName} onChange={(e) => set("customerName", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+        </div>
+        {form.status === "Cancelled" ? (
+          <div>
+            <label style={{ color: inkSoft }} className="text-xs block mb-1">ประเภทลูกค้า (A/B/C/N)</label>
+            <input type="text" maxLength={1} value={form.customerType} onChange={(e) => set("customerType", e.target.value.toUpperCase())} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+          </div>
+        ) : (
+          <div>
+            <label style={{ color: inkSoft }} className="text-xs block mb-1">ห้อง</label>
+            <input type="text" value={form.location} onChange={(e) => set("location", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+          </div>
+        )}
+        <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">ประเภทงาน (เช่น MT, WD, DN)</label>
+          <input type="text" value={form.jobType} onChange={(e) => set("jobType", e.target.value.toUpperCase())} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">จำนวนคน</label>
+          <input type="number" min="0" value={form.pax} onChange={(e) => set("pax", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">Sales</label>
+          <input type="text" value={form.sales} onChange={(e) => set("sales", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+        </div>
+        {form.status === "Cancelled" && (
+          <div>
+            <label style={{ color: inkSoft }} className="text-xs block mb-1">เหตุผลที่ยกเลิก</label>
+            <input type="text" value={form.reason} onChange={(e) => set("reason", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+          </div>
+        )}
+        <button type="submit" disabled={saving}
+          style={{ background: navyPrimary, color: "#fff", opacity: saving ? 0.6 : 1 }}
+          className="px-4 py-2 rounded-lg text-sm font-medium mt-2">
+          {saving ? "กำลังบันทึก..." : "บันทึกงาน"}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // หน้า "ประวัติการอัปโหลด" แบบเต็ม — ก่อนหน้านี้มีแค่การ์ดย่อย 2 รายการล่าสุดในหน้า Overview
 // ---------------------------------------------------------------------------
 function UploadHistoryPage({ role }) {
@@ -706,7 +823,7 @@ export default function SalesSummaryDashboard() {
                 key={item.key}
                 onClick={() => {
                   setActiveNav(item.key);
-                  if (!["overview", "functionsheet", "history"].includes(item.key)) {
+                  if (!["overview", "functionsheet", "history", "upload"].includes(item.key)) {
                     showToast(`หน้า "${item.label}" ยังไม่ได้สร้างในต้นแบบนี้`);
                   }
                 }}
@@ -872,6 +989,8 @@ export default function SalesSummaryDashboard() {
             <FunctionSheetPage role={role} dateFrom={dateFrom} dateTo={dateTo} />
           ) : activeNav === "history" ? (
             <UploadHistoryPage role={role} />
+          ) : activeNav === "upload" ? (
+            <ManualEntryPage role={role} onSaved={() => loadSummary().catch((err) => setSummaryError(err.message))} />
           ) : !hasData ? (
             <EmptyState onUpload={triggerUpload} processing={processing} canUpload={canUpload} />
           ) : (

@@ -57,6 +57,14 @@ export function api(role) {
     events: (filters) => getJSON(`/events${qs(filters)}`, role),
 
     functionSheetList: (from, to) => getJSON(`/function-sheet${qs({ from, to })}`, role),
+    async manualEntry(payload) {
+      const res = await apiFetch("/manual-entry", {
+        role, method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return res.json();
+    },
     async updateFunctionSheet(eventId, issuedAt) {
       const res = await apiFetch(`/function-sheet/${eventId}`, {
         role, method: "POST",

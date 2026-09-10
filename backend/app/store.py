@@ -131,6 +131,14 @@ class Store:
                 self.calendar_events = [e for e in self.calendar_events if e["status"] not in statuses_in_file] + calendar_events
         return len(cancelled_rows) + len(calendar_events)
 
+    def add_manual_cancelled(self, row: dict):
+        with self.lock:
+            self.cancelled_rows.append(row)
+
+    def add_manual_calendar(self, event: dict):
+        with self.lock:
+            self.calendar_events.append(event)
+
     def set_function_sheet_issued(self, event_id: str, issued_at: str | None):
         with self.lock:
             if issued_at:

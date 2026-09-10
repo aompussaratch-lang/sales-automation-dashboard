@@ -6,6 +6,7 @@ FastAPI backend สำหรับระบบสรุปข้อมูลฝ�
 
 import io
 import time
+import uuid
 from datetime import date
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, UploadFile
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from . import aggregate, config
 from .auth import get_current_user, require_roles
 from .parsing import raw_export
+from .parsing.cancelled import categorize_reason, make_event_id
 from .store import now_iso, store
 
 app = FastAPI(title="Sales Automation API")
@@ -139,6 +141,63 @@ def upload_status(job_id: str, user: dict = Depends(get_current_user)):
 @app.get("/uploads/history")
 def upload_history(user: dict = Depends(require_roles("sales"))):
     return {"items": store.upload_history}
+
+
+class ManualEntry(BaseModel):
+    """
+    ทางเลือกกรอกงานทีละรายการด้วยมือ (แทนอัปโหลดไฟล์) — ไม่ได้แทนที่ไฟล์อัปโหลด แค่ "เพิ่ม" งานใหม่
+    เข้าไปในชุดข้อมูลปัจจุบัน (ไฟล์อัปโหลดจริงยังคงแทนที่ข้อมูลทั้งไฟล์ตามปกติ)
+    """
+    status: str  # "Cancelled" หรือ "Confirmed"
+    date: str  # YYYY-MM-DD
+    customerName: str | None = None
+    customerType: str | None = None  # A/B/C/N (เฉพาะ Cancelled)
+    jobType: str | None = None
+    pax: int | None = None
+    sales: str | None = None
+    reason: str | None = None  # เฉพาะ Cancelled
+    location: str | None = None  # เฉพาะ Confirmed (ห้อง)
+
+
+@app.post("/manual-entry", status_code=201)
+def manual_entry(body: ManualEntry, user: dict = Depends(require_roles("sales"))):
+    try:
+        event_date = date.fromisoformat(body.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date ต้องเป็นรูปแบบ YYYY-MM-DD")
+
+    if body.status == "Cancelled":
+        row = {
+            "qtn": f"MANUAL-{uuid.uuid4().hex[:8]}",
+            "event_date": event_date,
+            "customer_name": body.customerName,
+            "sales": body.sales,
+            "job_type": body.jobType or None,
+            "customer_type": body.customerType or None,
+            "pax": body.pax,
+            "raw_reason": body.reason or "",
+            "reason_category": categorize_reason(body.reason or ""),
+        }
+        store.add_manual_cancelled(row)
+        return {"status": "ok", "type": "cancelled", "qtn": row["qtn"]}
+
+    title = body.customerName or "(ไม่มีชื่องาน)"
+    event = {
+        "id": make_event_id(event_date, title, body.sales, body.pax),
+        "date": event_date.isoformat(),
+        "date_obj": event_date,
+        "start": None,
+        "end": None,
+        "time_of_day": "ช่วงเช้า",
+        "pax": body.pax or 0,
+        "sales": body.sales,
+        "title": title,
+        "location": body.location or None,
+        "job_type": body.jobType or None,
+        "status": "Confirmed",
+    }
+    store.add_manual_calendar(event)
+    return {"status": "ok", "type": "confirmed", "id": event["id"]}
 
 
 # ---------------------------------------------------------------------------
