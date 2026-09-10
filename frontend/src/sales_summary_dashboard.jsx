@@ -733,8 +733,8 @@ export default function SalesSummaryDashboard() {
   const fileInputRef = useRef(null);
 
   const [activeNav, setActiveNav] = useState("overview");
-  const [dateFrom, setDateFrom] = useState("2026-05-01");
-  const [dateTo, setDateTo] = useState("2026-05-31");
+  const [dateFrom, setDateFrom] = useState(() => getMonthRange(new Date()).from);
+  const [dateTo, setDateTo] = useState(() => getMonthRange(new Date()).to);
   const [quickFilter, setQuickFilter] = useState("month");
 
   const [refreshing, setRefreshing] = useState(false);
