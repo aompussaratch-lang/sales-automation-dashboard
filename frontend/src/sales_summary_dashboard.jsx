@@ -154,9 +154,9 @@ function heatTextColor(count) {
 // ---------------------------------------------------------------------------
 // Small building blocks
 // ---------------------------------------------------------------------------
-function Card({ children, style, className = "" }) {
+function Card({ children, style, className = "", onClick }) {
   return (
-    <div style={{ background: surface, border: `1px solid ${line}`, borderRadius: 14, ...style }} className={`p-5 ${className}`}>
+    <div style={{ background: surface, border: `1px solid ${line}`, borderRadius: 14, ...style }} className={`p-5 ${className}`} onClick={onClick}>
       {children}
     </div>
   );
@@ -175,9 +175,13 @@ function TrendBadge({ current, previous, goodDirection }) {
   );
 }
 
-function KpiCard({ icon, iconBg, label, value, unit, trend, valueColor }) {
+function KpiCard({ icon, iconBg, label, value, unit, trend, valueColor, onClick }) {
   return (
-    <Card style={{ flex: 1, minWidth: 220 }}>
+    <Card
+      style={{ flex: 1, minWidth: 220, cursor: onClick ? "pointer" : undefined }}
+      className={onClick ? "transition-shadow hover:shadow-md" : ""}
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between mb-4">
         <p style={{ color: inkSoft, fontFamily: FONT }} className="text-sm">{label}</p>
         <div style={{ background: iconBg, borderRadius: 10, width: 40, height: 40 }} className="flex items-center justify-center shrink-0">
@@ -189,6 +193,7 @@ function KpiCard({ icon, iconBg, label, value, unit, trend, valueColor }) {
         {unit && <span style={{ color: inkSoft }} className="text-sm">{unit}</span>}
       </div>
       {trend}
+      {onClick && <p style={{ color: navyPrimary }} className="text-xs mt-2 underline">ดูรายละเอียด →</p>}
     </Card>
   );
 }
@@ -1180,6 +1185,7 @@ export default function SalesSummaryDashboard() {
               icon={<CheckCircle2 size={18} style={{ color: green }} />} iconBg={kpi3IconBg}
               label="งาน Confirmed ทั้งหมด" value={totalConfirmedJobs} unit="งาน" valueColor={green}
               trend={<TrendBadge current={totalConfirmedJobs} previous={kpi?.confirmedTotal?.previous ?? 0} goodDirection="up" />}
+              onClick={() => setActiveNav("functionsheet")}
             />
             <KpiCard
               icon={<FileText size={18} style={{ color: fsSummary.urgentCount > 0 ? redText : navyPrimary }} />} iconBg={fsSummary.urgentCount > 0 ? kpi1IconBg : kpi4IconBg}
@@ -1189,6 +1195,7 @@ export default function SalesSummaryDashboard() {
                   ? <span style={{ color: redText }} className="text-xs font-medium">⚠ {fsSummary.urgentCount} งานใกล้ครบกำหนด/เลยกำหนด</span>
                   : <span style={{ color: inkSoft }} className="text-xs">ไม่มีงานเร่งด่วน</span>
               }
+              onClick={() => setActiveNav("functionsheet")}
             />
           </div>
 
