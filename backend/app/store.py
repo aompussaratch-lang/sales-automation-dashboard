@@ -76,7 +76,6 @@ class Store:
             "customerType": ["A", "B", "C", "N"],
             "jobType": ["MT", "WD", "DN", "WL", "Audition", "EN", "ED"],
             "sales": ["Pheeraphorn Chayarun", "Nicharee Nakkliang", "Lapatrada Duangjan", "Janjira Petna"],
-            "timeOfDay": ["ช่วงเช้า", "ช่วงบ่าย", "ช่วงเย็น"],
         }
         self._seed()
 

@@ -459,7 +459,7 @@ function ManualEntryPage({ role, onSaved }) {
   const [form, setForm] = useState(EMPTY_MANUAL_FORM);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
-  const [options, setOptions] = useState({ customerType: [], jobType: [], sales: [], timeOfDay: [] });
+  const [options, setOptions] = useState({ customerType: [], jobType: [], sales: [] });
 
   const loadOptions = useCallback(() => {
     api(role).getOptions().then(setOptions).catch(() => {});
@@ -530,10 +530,10 @@ function ManualEntryPage({ role, onSaved }) {
           <label style={{ color: inkSoft }} className="text-xs block mb-1">วันที่จัดงาน *</label>
           <input type="date" required value={form.date} onChange={(e) => set("date", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
         </div>
-        <EditableSelect
-          label="ช่วงเวลาที่จัดงาน" value={form.timeOfDay} onChange={(v) => set("timeOfDay", v)}
-          options={options.timeOfDay || []} onOptionsChange={(v) => saveOptionList("timeOfDay", v)} inputStyle={inputStyle}
-        />
+        <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">เวลาที่จัดงาน</label>
+          <input type="time" value={form.timeOfDay} onChange={(e) => set("timeOfDay", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+        </div>
         <div>
           <label style={{ color: inkSoft }} className="text-xs block mb-1">ชื่อลูกค้า/ชื่องาน</label>
           <input type="text" value={form.customerName} onChange={(e) => set("customerName", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />

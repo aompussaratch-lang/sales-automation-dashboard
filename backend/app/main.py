@@ -201,7 +201,7 @@ def manual_entry(body: ManualEntry, user: dict = Depends(require_roles("sales"))
         "contact_date": contact_date,
         "start": None,
         "end": None,
-        "time_of_day": body.timeOfDay or "ช่วงเช้า",
+        "time_of_day": body.timeOfDay or None,
         "pax": body.pax or 0,
         "sales": body.sales,
         "title": title,
