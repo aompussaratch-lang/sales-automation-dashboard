@@ -375,6 +375,66 @@ function FunctionSheetPage({ role, dateFrom, dateTo }) {
 }
 
 // ---------------------------------------------------------------------------
+// หน้า "ประวัติการอัปโหลด" แบบเต็ม — ก่อนหน้านี้มีแค่การ์ดย่อย 2 รายการล่าสุดในหน้า Overview
+// ---------------------------------------------------------------------------
+function UploadHistoryPage({ role }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let ignore = false;
+    setLoading(true);
+    api(role).uploadHistory()
+      .then((res) => { if (!ignore) setItems(res.items); })
+      .catch((err) => { if (!ignore) setError(err.message); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
+  }, [role]);
+
+  return (
+    <Card>
+      <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-4">ประวัติการอัปโหลดไฟล์</p>
+      {error && <p style={{ color: redText }} className="text-xs mb-3">{error}</p>}
+      {loading ? (
+        <p style={{ color: inkFaint }} className="text-sm py-4">กำลังโหลด...</p>
+      ) : items.length === 0 ? (
+        <p style={{ color: inkFaint }} className="text-sm py-4">ยังไม่มีประวัติการอัปโหลด</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${line}` }}>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">ชื่อไฟล์</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">ประเภทไฟล์</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">วันเวลาที่อัปโหลด</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">ผู้อัปโหลด</th>
+                <th style={{ color: inkFaint }} className="text-left font-normal py-2 text-xs">สถานะ</th>
+                <th style={{ color: inkFaint }} className="text-right font-normal py-2 text-xs">รายการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((h) => (
+                <tr key={h.id} style={{ borderBottom: `1px solid ${line}` }}>
+                  <td style={{ color: ink }} className="py-2">{h.fileName}</td>
+                  <td style={{ color: inkSoft }} className="py-2">{h.type}</td>
+                  <td style={{ color: inkSoft }} className="py-2 whitespace-nowrap">{formatThaiDateTime(h.uploadedAt)}</td>
+                  <td style={{ color: inkSoft }} className="py-2">{h.uploadedBy}</td>
+                  <td className="py-2">
+                    <span style={{ color: h.fileStatus === "ผ่าน" ? green : redText }} className="text-xs font-medium">{h.fileStatus}</span>
+                  </td>
+                  <td style={{ color: ink }} className="py-2 text-right">{h.rows.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 export default function SalesSummaryDashboard() {
@@ -646,7 +706,7 @@ export default function SalesSummaryDashboard() {
                 key={item.key}
                 onClick={() => {
                   setActiveNav(item.key);
-                  if (item.key !== "overview" && item.key !== "functionsheet") {
+                  if (!["overview", "functionsheet", "history"].includes(item.key)) {
                     showToast(`หน้า "${item.label}" ยังไม่ได้สร้างในต้นแบบนี้`);
                   }
                 }}
@@ -810,6 +870,8 @@ export default function SalesSummaryDashboard() {
 
           {activeNav === "functionsheet" ? (
             <FunctionSheetPage role={role} dateFrom={dateFrom} dateTo={dateTo} />
+          ) : activeNav === "history" ? (
+            <UploadHistoryPage role={role} />
           ) : !hasData ? (
             <EmptyState onUpload={triggerUpload} processing={processing} canUpload={canUpload} />
           ) : (
