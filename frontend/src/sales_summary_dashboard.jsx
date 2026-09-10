@@ -298,7 +298,7 @@ const FS_STATUS_COLOR = { issued: green, not_due: inkFaint, urgent: redText };
 // ---------------------------------------------------------------------------
 // หน้า "อัปเดตสถานะ Function Sheet" — ตารางงาน Confirmed พร้อมกรอกวันที่ออก Function Sheet ทีละงาน
 // ---------------------------------------------------------------------------
-function FunctionSheetPage({ role, dateFrom, dateTo }) {
+function FunctionSheetPage({ role, dateFrom, dateTo, onSaved }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -319,6 +319,7 @@ function FunctionSheetPage({ role, dateFrom, dateTo }) {
     try {
       await api(role).updateFunctionSheet(id, value || null);
       await load();
+      onSaved?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1163,7 +1164,7 @@ export default function SalesSummaryDashboard() {
           )}
 
           {activeNav === "functionsheet" ? (
-            <FunctionSheetPage role={role} dateFrom={dateFrom} dateTo={dateTo} />
+            <FunctionSheetPage role={role} dateFrom={dateFrom} dateTo={dateTo} onSaved={() => loadSummary().catch((err) => setSummaryError(err.message))} />
           ) : activeNav === "history" ? (
             <UploadHistoryPage role={role} />
           ) : activeNav === "upload" ? (
