@@ -70,6 +70,14 @@ class Store:
         # event id (จาก make_event_id) -> วันที่ออก Function Sheet (ISO date string) — ผู้ใช้กรอกเองผ่าน
         # POST /function-sheet/{event_id} คงอยู่ข้าม re-upload เพราะ id คำนวณจากข้อมูลงานเอง ไม่ใช่ index
         self.function_sheet_issued: dict[str, str] = {}
+        # ตัวเลือกแบบ dropdown สำหรับฟอร์มกรอกงานด้วยมือ — แก้ไข/เพิ่มเองได้ผ่าน PUT /options/{list_name}
+        # (แก้ที่นี่แค่เปลี่ยนตัวเลือกที่เลือกได้ทีหลัง ไม่กระทบข้อความที่บันทึกไปแล้วในงานเก่า)
+        self.option_lists: dict[str, list[str]] = {
+            "customerType": ["A", "B", "C", "N"],
+            "jobType": ["MT", "WD", "DN", "WL", "Audition", "EN", "ED"],
+            "sales": ["Pheeraphorn Chayarun", "Nicharee Nakkliang", "Lapatrada Duangjan", "Janjira Petna"],
+            "timeOfDay": ["ช่วงเช้า", "ช่วงบ่าย", "ช่วงเย็น"],
+        }
         self._seed()
 
     # -- seed จากไฟล์จริงที่มีอยู่แล้วในโปรเจกต์ ให้ dashboard มีข้อมูลให้ดูทันทีตั้งแต่แรก --
@@ -170,6 +178,10 @@ class Store:
 
     def get_job(self, job_id: str):
         return self.jobs.get(job_id)
+
+    def set_option_list(self, list_name: str, values: list[str]):
+        with self.lock:
+            self.option_lists[list_name] = values
 
     def reset_to_seed(self):
         """เครื่องมือผู้ดูแลระบบ: ล้างข้อมูลทดสอบทั้งหมด (ไฟล์ที่อัปโหลด, งานที่กรอกเอง, สถานะ Function

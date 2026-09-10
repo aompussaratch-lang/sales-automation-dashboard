@@ -389,14 +389,89 @@ const EMPTY_MANUAL_FORM = {
   sales: "",
   reason: "",
   location: "",
+  contactDate: "",
+  timeOfDay: "",
 };
+
+// เลือกจาก dropdown ปกติ แต่กด "จัดการตัวเลือก" เพื่อเพิ่ม/แก้/ลบตัวเลือกในรายการได้เอง (บันทึกที่
+// backend ผ่าน PUT /options/{listName} — แก้แค่รายการตัวเลือก ไม่กระทบข้อความที่บันทึกไปแล้วในงานเก่า)
+function EditableSelect({ label, value, onChange, options, onOptionsChange, inputStyle }) {
+  const [managing, setManaging] = useState(false);
+  const [draftOptions, setDraftOptions] = useState(options);
+  const [newValue, setNewValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setDraftOptions(options); }, [options]);
+
+  function updateDraft(i, val) { setDraftOptions((prev) => prev.map((o, idx) => (idx === i ? val : o))); }
+  function removeDraft(i) { setDraftOptions((prev) => prev.filter((_, idx) => idx !== i)); }
+  function addDraft() {
+    if (!newValue.trim()) return;
+    setDraftOptions((prev) => [...prev, newValue.trim()]);
+    setNewValue("");
+  }
+  async function saveDraft() {
+    setSaving(true);
+    try {
+      await onOptionsChange(draftOptions.map((v) => v.trim()).filter(Boolean));
+      setManaging(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label style={{ color: inkSoft }} className="text-xs">{label}</label>
+        <button type="button" onClick={() => setManaging((v) => !v)} style={{ color: navyPrimary }} className="text-xs underline">
+          {managing ? "ปิด" : "จัดการตัวเลือก"}
+        </button>
+      </div>
+      <select value={value} onChange={(e) => onChange(e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm">
+        <option value="">- ไม่ระบุ -</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+      {managing && (
+        <div style={{ border: `1px solid ${line}`, borderRadius: 8 }} className="mt-2 p-2 flex flex-col gap-1.5">
+          {draftOptions.map((o, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <input type="text" value={o} onChange={(e) => updateDraft(i, e.target.value)} style={inputStyle} className="flex-1 px-2 py-1 text-xs" />
+              <button type="button" onClick={() => removeDraft(i)} style={{ color: redText }} className="text-xs px-1 shrink-0">ลบ</button>
+            </div>
+          ))}
+          <div className="flex items-center gap-1.5">
+            <input type="text" placeholder="เพิ่มตัวเลือกใหม่" value={newValue} onChange={(e) => setNewValue(e.target.value)} style={inputStyle} className="flex-1 px-2 py-1 text-xs" />
+            <button type="button" onClick={addDraft} style={{ color: navyPrimary }} className="text-xs px-1 shrink-0">เพิ่ม</button>
+          </div>
+          <button type="button" onClick={saveDraft} disabled={saving}
+            style={{ background: navyPrimary, color: "#fff", opacity: saving ? 0.6 : 1 }}
+            className="text-xs px-3 py-1.5 rounded-md mt-1 self-start">
+            {saving ? "กำลังบันทึก..." : "บันทึกตัวเลือก"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ManualEntryPage({ role, onSaved }) {
   const [form, setForm] = useState(EMPTY_MANUAL_FORM);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const [options, setOptions] = useState({ customerType: [], jobType: [], sales: [], timeOfDay: [] });
+
+  const loadOptions = useCallback(() => {
+    api(role).getOptions().then(setOptions).catch(() => {});
+  }, [role]);
+  useEffect(() => { loadOptions(); }, [loadOptions]);
 
   function set(key, value) { setForm((f) => ({ ...f, [key]: value })); }
+
+  async function saveOptionList(listName, values) {
+    const res = await api(role).updateOptions(listName, values);
+    setOptions((o) => ({ ...o, ...res }));
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -407,9 +482,11 @@ function ManualEntryPage({ role, onSaved }) {
       await api(role).manualEntry({
         status: form.status,
         date: form.date,
+        contactDate: form.contactDate || null,
         customerName: form.customerName || null,
         customerType: form.customerType || null,
         jobType: form.jobType || null,
+        timeOfDay: form.timeOfDay || null,
         pax: form.pax ? Number(form.pax) : null,
         sales: form.sales || null,
         reason: form.reason || null,
@@ -446,36 +523,44 @@ function ManualEntryPage({ role, onSaved }) {
           </select>
         </div>
         <div>
+          <label style={{ color: inkSoft }} className="text-xs block mb-1">วันที่ติดต่องาน</label>
+          <input type="date" value={form.contactDate} onChange={(e) => set("contactDate", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
+        </div>
+        <div>
           <label style={{ color: inkSoft }} className="text-xs block mb-1">วันที่จัดงาน *</label>
           <input type="date" required value={form.date} onChange={(e) => set("date", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
         </div>
+        <EditableSelect
+          label="ช่วงเวลาที่จัดงาน" value={form.timeOfDay} onChange={(v) => set("timeOfDay", v)}
+          options={options.timeOfDay || []} onOptionsChange={(v) => saveOptionList("timeOfDay", v)} inputStyle={inputStyle}
+        />
         <div>
           <label style={{ color: inkSoft }} className="text-xs block mb-1">ชื่อลูกค้า/ชื่องาน</label>
           <input type="text" value={form.customerName} onChange={(e) => set("customerName", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
         </div>
         {form.status === "Cancelled" ? (
-          <div>
-            <label style={{ color: inkSoft }} className="text-xs block mb-1">ประเภทลูกค้า (A/B/C/N)</label>
-            <input type="text" maxLength={1} value={form.customerType} onChange={(e) => set("customerType", e.target.value.toUpperCase())} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
-          </div>
+          <EditableSelect
+            label="ประเภทลูกค้า" value={form.customerType} onChange={(v) => set("customerType", v)}
+            options={options.customerType || []} onOptionsChange={(v) => saveOptionList("customerType", v)} inputStyle={inputStyle}
+          />
         ) : (
           <div>
             <label style={{ color: inkSoft }} className="text-xs block mb-1">ห้อง</label>
             <input type="text" value={form.location} onChange={(e) => set("location", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
           </div>
         )}
-        <div>
-          <label style={{ color: inkSoft }} className="text-xs block mb-1">ประเภทงาน (เช่น MT, WD, DN)</label>
-          <input type="text" value={form.jobType} onChange={(e) => set("jobType", e.target.value.toUpperCase())} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
-        </div>
+        <EditableSelect
+          label="ประเภทงาน" value={form.jobType} onChange={(v) => set("jobType", v)}
+          options={options.jobType || []} onOptionsChange={(v) => saveOptionList("jobType", v)} inputStyle={inputStyle}
+        />
         <div>
           <label style={{ color: inkSoft }} className="text-xs block mb-1">จำนวนคน</label>
           <input type="number" min="0" value={form.pax} onChange={(e) => set("pax", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
         </div>
-        <div>
-          <label style={{ color: inkSoft }} className="text-xs block mb-1">Sales</label>
-          <input type="text" value={form.sales} onChange={(e) => set("sales", e.target.value)} style={inputStyle} className="w-full px-2 py-1.5 text-sm" />
-        </div>
+        <EditableSelect
+          label="Sales" value={form.sales} onChange={(v) => set("sales", v)}
+          options={options.sales || []} onOptionsChange={(v) => saveOptionList("sales", v)} inputStyle={inputStyle}
+        />
         {form.status === "Cancelled" && (
           <div>
             <label style={{ color: inkSoft }} className="text-xs block mb-1">เหตุผลที่ยกเลิก</label>

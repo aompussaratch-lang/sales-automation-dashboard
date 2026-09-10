@@ -150,10 +150,12 @@ class ManualEntry(BaseModel):
     เข้าไปในชุดข้อมูลปัจจุบัน (ไฟล์อัปโหลดจริงยังคงแทนที่ข้อมูลทั้งไฟล์ตามปกติ)
     """
     status: str  # "Cancelled" หรือ "Confirmed"
-    date: str  # YYYY-MM-DD
+    date: str  # YYYY-MM-DD — วันที่จัดงาน
+    contactDate: str | None = None  # YYYY-MM-DD — วันที่ติดต่อ/ทำใบเสนอราคา (ไม่บังคับ)
     customerName: str | None = None
     customerType: str | None = None  # A/B/C/N (เฉพาะ Cancelled)
     jobType: str | None = None
+    timeOfDay: str | None = None  # ช่วงเช้า/บ่าย/เย็น
     pax: int | None = None
     sales: str | None = None
     reason: str | None = None  # เฉพาะ Cancelled
@@ -167,14 +169,23 @@ def manual_entry(body: ManualEntry, user: dict = Depends(require_roles("sales"))
     except ValueError:
         raise HTTPException(status_code=400, detail="date ต้องเป็นรูปแบบ YYYY-MM-DD")
 
+    contact_date = None
+    if body.contactDate:
+        try:
+            contact_date = date.fromisoformat(body.contactDate)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="contactDate ต้องเป็นรูปแบบ YYYY-MM-DD")
+
     if body.status == "Cancelled":
         row = {
             "qtn": f"MANUAL-{uuid.uuid4().hex[:8]}",
             "event_date": event_date,
+            "contact_date": contact_date,
             "customer_name": body.customerName,
             "sales": body.sales,
             "job_type": body.jobType or None,
             "customer_type": body.customerType or None,
+            "time_of_day": body.timeOfDay or None,
             "pax": body.pax,
             "raw_reason": body.reason or "",
             "reason_category": categorize_reason(body.reason or ""),
@@ -187,9 +198,10 @@ def manual_entry(body: ManualEntry, user: dict = Depends(require_roles("sales"))
         "id": make_event_id(event_date, title, body.sales, body.pax),
         "date": event_date.isoformat(),
         "date_obj": event_date,
+        "contact_date": contact_date,
         "start": None,
         "end": None,
-        "time_of_day": "ช่วงเช้า",
+        "time_of_day": body.timeOfDay or "ช่วงเช้า",
         "pax": body.pax or 0,
         "sales": body.sales,
         "title": title,
@@ -199,6 +211,20 @@ def manual_entry(body: ManualEntry, user: dict = Depends(require_roles("sales"))
     }
     store.add_manual_calendar(event)
     return {"status": "ok", "type": "confirmed", "id": event["id"]}
+
+
+@app.get("/options")
+def get_options(user: dict = Depends(get_current_user)):
+    return store.option_lists
+
+
+@app.put("/options/{list_name}")
+def update_options(list_name: str, body: list[str], user: dict = Depends(get_current_user)):
+    if list_name not in store.option_lists:
+        raise HTTPException(status_code=404, detail=f"ไม่พบรายการตัวเลือกชื่อ '{list_name}'")
+    cleaned = [v.strip() for v in body if v.strip()]
+    store.set_option_list(list_name, cleaned)
+    return {list_name: cleaned}
 
 
 # ---------------------------------------------------------------------------

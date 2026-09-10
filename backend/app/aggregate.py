@@ -236,11 +236,14 @@ def compute_events(cancelled_rows: list[dict], calendar_events: list[dict], filt
     items = []
 
     for r in cancelled_rows:
+        contact_date = r.get("contact_date")  # .get() เพราะแถวที่มาจากไฟล์ (ไม่ใช่กรอกมือ) ไม่มีฟิลด์นี้
         items.append({
             "eventName": r["customer_name"] or (r["raw_reason"][:40] if r["raw_reason"] else r["qtn"]),
             "date": r["event_date"].isoformat() if r["event_date"] else None,
+            "contactDate": contact_date.isoformat() if contact_date else None,
             "customerType": r["customer_type"],
             "jobType": r["job_type"],
+            "timeOfDay": r.get("time_of_day"),
             "status": "cancelled",
             "reason": r["raw_reason"] or None,
             "sales": r["sales"],
@@ -256,11 +259,14 @@ def compute_events(cancelled_rows: list[dict], calendar_events: list[dict], filt
             status = "cancelled"
         else:
             status = "pending"
+        contact_date = e.get("contact_date")
         items.append({
             "eventName": e["title"],
             "date": e["date_obj"].isoformat() if e["date_obj"] else None,
+            "contactDate": contact_date.isoformat() if contact_date else None,
             "customerType": None,
             "jobType": e["job_type"],
+            "timeOfDay": e.get("time_of_day"),
             "status": status,
             "reason": None,
             "sales": e["sales"],
