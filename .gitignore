@@ -5,5 +5,7 @@ __pycache__/
 *.pyc
 backend/uploads/*
 !backend/uploads/.gitkeep
+backend/data/*
+!backend/data/.gitkeep
 .env
 dist/

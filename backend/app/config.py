@@ -16,5 +16,10 @@ SEED_CALENDAR_FILE = Path(os.environ.get("SEED_CALENDAR_FILE", PROJECT_ROOT / "F
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", PROJECT_ROOT / "backend" / "uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# ไฟล์เก็บสถานะของ Store ทั้งหมด (ข้อมูลที่อัพโหลด/กรอกเอง) แบบถาวร — เขียนทับทุกครั้งที่ข้อมูลเปลี่ยน
+# เพื่อให้ข้อมูลไม่หายตอน backend รีสตาร์ท (เดิมเก็บในหน่วยความจำล้วนๆ หายทุกครั้งที่ restart)
+STATE_FILE = Path(os.environ.get("STATE_FILE", PROJECT_ROOT / "backend" / "data" / "store_state.json"))
+STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
 # origin ฝั่ง frontend (dev server) สำหรับ CORS — ปรับเป็น origin จริงตอน deploy
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")

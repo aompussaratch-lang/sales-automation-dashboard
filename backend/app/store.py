@@ -1,11 +1,14 @@
 """
-ที่เก็บข้อมูลแบบ in-memory — เหมาะสำหรับ dev/demo เท่านั้น
-ก่อนขึ้น production ควรย้ายไป database จริง (upload history, job status ต้องอยู่รอด restart / scale ได้)
+ที่เก็บข้อมูลหลักของแอป — เก็บไว้ในหน่วยความจำระหว่างรัน แล้ว persist ลงไฟล์ JSON เดียว
+(backend/data/store_state.json) ทุกครั้งที่ข้อมูลเปลี่ยน เพื่อให้รอดจากการรีสตาร์ท backend
+เหมาะสำหรับ dev/demo เท่านั้น — ก่อนขึ้น production จริง (หลายเครื่อง/หลาย instance พร้อมกัน)
+ควรย้ายไป database จริงแทนไฟล์เดียวนี้
 """
 
+import json
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from . import config
@@ -45,6 +48,21 @@ def dedupe_cancelled(rows: list[dict]) -> list[dict]:
     return out
 
 
+def _to_jsonable(rows: list[dict]) -> list[dict]:
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k, v in d.items():
+            if hasattr(v, "isoformat"):
+                d[k] = v.isoformat()
+        out.append(d)
+    return out
+
+
+def _parse_date_field(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value else None
+
+
 def dedupe_calendar(events: list[dict]) -> list[dict]:
     """ตัดรายการซ้ำ — ถือว่าซ้ำกันถ้า id ตรงกัน (id คำนวณจาก วันที่+ชื่องาน+sales+pax ดู parsing/cancelled.py::make_event_id)"""
     seen: set[str] = set()
@@ -77,7 +95,56 @@ class Store:
             "jobType": ["MT", "WD", "DN", "WL", "Audition", "EN", "ED"],
             "sales": ["Pheeraphorn Chayarun", "Nicharee Nakkliang", "Lapatrada Duangjan", "Janjira Petna"],
         }
-        self._seed()
+        # โหลดข้อมูลที่เคยบันทึกไว้ก่อนหน้า (ถ้ามี) แทนการ seed ใหม่ทุกครั้ง — ทำให้ข้อมูลที่อัพโหลด/
+        # กรอกเองไม่หายตอน backend รีสตาร์ท (ดู _save/_load_persisted ด้านล่าง)
+        if not self._load_persisted():
+            self._seed()
+            self._save()
+
+    # -- persist ลงไฟล์ backend/data/store_state.json ทุกครั้งที่ข้อมูลเปลี่ยน --
+    def _save(self):
+        state = {
+            "cancelledRows": _to_jsonable(self.cancelled_rows),
+            "calendarEvents": _to_jsonable(self.calendar_events),
+            "uploadHistory": self.upload_history,
+            "functionSheetIssued": self.function_sheet_issued,
+            "optionLists": self.option_lists,
+        }
+        tmp = config.STATE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(config.STATE_FILE)
+
+    def _load_persisted(self) -> bool:
+        if not config.STATE_FILE.exists():
+            return False
+        try:
+            state = json.loads(config.STATE_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return False
+
+        cancelled_rows = []
+        for r in state.get("cancelledRows", []):
+            r = dict(r)
+            r["event_date"] = _parse_date_field(r.get("event_date"))
+            if "contact_date" in r:
+                r["contact_date"] = _parse_date_field(r.get("contact_date"))
+            cancelled_rows.append(r)
+
+        calendar_events = []
+        for e in state.get("calendarEvents", []):
+            e = dict(e)
+            e["date_obj"] = _parse_date_field(e.get("date_obj"))
+            if "contact_date" in e:
+                e["contact_date"] = _parse_date_field(e.get("contact_date"))
+            calendar_events.append(e)
+
+        self.cancelled_rows = cancelled_rows
+        self.calendar_events = calendar_events
+        self.upload_history = state.get("uploadHistory", [])
+        self.function_sheet_issued = state.get("functionSheetIssued", {})
+        if state.get("optionLists"):
+            self.option_lists = state["optionLists"]
+        return True
 
     # -- seed จากไฟล์จริงที่มีอยู่แล้วในโปรเจกต์ ให้ dashboard มีข้อมูลให้ดูทันทีตั้งแต่แรก --
     def _seed(self):
@@ -111,6 +178,7 @@ class Store:
         rows = dedupe_cancelled(_parse_cancelled_file(path))
         with self.lock:
             self.cancelled_rows = rows  # ไฟล์ Cancelled ใหม่แทนที่ชุดเดิมทั้งไฟล์ (export เต็มรอบเสมอ)
+        self._save()
         return len(rows)
 
     def ingest_calendar(self, path: Path, status: str = "Confirmed"):
@@ -121,6 +189,7 @@ class Store:
             # จึงอาจมีได้มากกว่า 1 สถานะในไฟล์เดียว — ดู parsing/raw_export.py)
             statuses_in_file = {e["status"] for e in events} or {status}
             self.calendar_events = [e for e in self.calendar_events if e["status"] not in statuses_in_file] + events
+        self._save()
         return len(events)
 
     def ingest_raw_export(self, path: Path) -> int:
@@ -136,15 +205,18 @@ class Store:
             if calendar_events:
                 statuses_in_file = {e["status"] for e in calendar_events}
                 self.calendar_events = [e for e in self.calendar_events if e["status"] not in statuses_in_file] + calendar_events
+        self._save()
         return len(cancelled_rows) + len(calendar_events)
 
     def add_manual_cancelled(self, row: dict):
         with self.lock:
             self.cancelled_rows.append(row)
+        self._save()
 
     def add_manual_calendar(self, event: dict):
         with self.lock:
             self.calendar_events.append(event)
+        self._save()
 
     def set_function_sheet_issued(self, event_id: str, issued_at: str | None):
         with self.lock:
@@ -152,10 +224,12 @@ class Store:
                 self.function_sheet_issued[event_id] = issued_at
             else:
                 self.function_sheet_issued.pop(event_id, None)
+        self._save()
 
     def add_upload_history(self, entry: dict):
         with self.lock:
             self.upload_history.insert(0, entry)
+        self._save()
 
     def create_job(self, files: list[dict]) -> str:
         job_id = f"job_{uuid.uuid4().hex[:8]}"
@@ -181,6 +255,7 @@ class Store:
     def set_option_list(self, list_name: str, values: list[str]):
         with self.lock:
             self.option_lists[list_name] = values
+        self._save()
 
     def reset_to_seed(self):
         """เครื่องมือผู้ดูแลระบบ: ล้างข้อมูลทดสอบทั้งหมด (ไฟล์ที่อัปโหลด, งานที่กรอกเอง, สถานะ Function
@@ -193,6 +268,7 @@ class Store:
             self.function_sheet_issued = {}
             self.drive_status = {"status": "synced", "lastSyncAt": now_iso()}
         self._seed()
+        self._save()
 
     def export_snapshot(self) -> dict:
         """เครื่องมือผู้ดูแลระบบ: export ข้อมูลดิบทั้งหมดในระบบตอนนี้เป็น JSON (โหลดเก็บไว้ก่อนรีเซ็ตได้)"""
