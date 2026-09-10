@@ -5,6 +5,7 @@ FastAPI backend สำหรับระบบสรุปข้อมูลฝ�
 """
 
 import io
+import json
 import time
 import uuid
 from datetime import date
@@ -198,6 +199,30 @@ def manual_entry(body: ManualEntry, user: dict = Depends(require_roles("sales"))
     }
     store.add_manual_calendar(event)
     return {"status": "ok", "type": "confirmed", "id": event["id"]}
+
+
+# ---------------------------------------------------------------------------
+# เครื่องมือผู้ดูแลระบบ — เฉพาะ role manager (บังคับสิทธิ์ฝั่ง backend จริง ไม่ใช่แค่ซ่อนปุ่ม)
+# ---------------------------------------------------------------------------
+@app.get("/admin/export")
+def admin_export(user: dict = Depends(require_roles("manager"))):
+    snapshot = store.export_snapshot()
+    data = json.dumps(snapshot, ensure_ascii=False, indent=2).encode("utf-8")
+    filename = f"sales_data_snapshot_{date.today().isoformat()}.json"
+    return StreamingResponse(
+        io.BytesIO(data), media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/admin/reset")
+def admin_reset(user: dict = Depends(require_roles("manager"))):
+    store.reset_to_seed()
+    return {
+        "status": "ok",
+        "cancelledRows": len(store.cancelled_rows),
+        "calendarEvents": len(store.calendar_events),
+    }
 
 
 # ---------------------------------------------------------------------------

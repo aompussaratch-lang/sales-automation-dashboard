@@ -75,6 +75,25 @@ export function api(role) {
     },
 
     uploadHistory: () => getJSON("/uploads/history", role),
+    adminReset: async () => {
+      const res = await apiFetch("/admin/reset", { role, method: "POST" });
+      return res.json();
+    },
+    adminExport: async () => {
+      const res = await apiFetch("/admin/export", { role });
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match ? match[1] : "sales_data_snapshot.json";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
     uploadStatus: (jobId) => getJSON(`/uploads/${jobId}/status`, role),
     driveStatus: () => getJSON("/drive/status", role),
 

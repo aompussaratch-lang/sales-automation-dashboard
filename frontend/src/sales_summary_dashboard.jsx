@@ -6,7 +6,7 @@ import {
 import {
   LayoutGrid, Upload, BarChart3, History, Palette, Bell, Users, LogOut, Menu, Search,
   RefreshCw, Download, ChevronDown, ChevronLeft, ChevronRight, XCircle, Briefcase, Award, FileSpreadsheet,
-  FileText, CheckCircle2, AlertCircle, Cloud,
+  FileText, CheckCircle2, AlertCircle, Cloud, Shield, Trash2,
 } from "lucide-react";
 import { api, pollUploadStatus } from "./api";
 
@@ -284,6 +284,7 @@ const NAV_ITEMS = [
   { key: "colors", label: "ตั้งค่าสถานะสี", icon: Palette },
   { key: "alerts", label: "ตั้งค่าแจ้งเตือน", icon: Bell },
   { key: "users", label: "ผู้ใช้งาน", icon: Users },
+  { key: "admin", label: "เครื่องมือผู้ดูแลระบบ", icon: Shield },
 ];
 
 const FS_STATUS_LABEL = { issued: "ออกแล้ว", not_due: "ยังไม่ถึงกำหนด", urgent: "ใกล้ครบกำหนด/เลยกำหนด" };
@@ -487,6 +488,92 @@ function ManualEntryPage({ role, onSaved }) {
           {saving ? "กำลังบันทึก..." : "บันทึกงาน"}
         </button>
       </form>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// หน้า "เครื่องมือผู้ดูแลระบบ" — export ข้อมูลปัจจุบันเป็นไฟล์ก่อน แล้วค่อยรีเซ็ตกลับเป็นข้อมูลตั้งต้น
+// (ล้างไฟล์ที่เคยอัปโหลด/งานที่กรอกเอง/สถานะ Function Sheet ทั้งหมด) — เฉพาะ role "manager" เท่านั้น
+// (backend บังคับสิทธิ์จริงด้วย ไม่ใช่แค่ซ่อนปุ่มฝั่งนี้)
+// ---------------------------------------------------------------------------
+function AdminPage({ role, onReset }) {
+  const [exporting, setExporting] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  if (role !== "manager") {
+    return (
+      <Card>
+        <p style={{ color: redText }} className="text-sm">หน้านี้สำหรับ role "หัวหน้าฝ่ายขาย" เท่านั้น</p>
+      </Card>
+    );
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    setMessage(null);
+    try {
+      await api(role).adminExport();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleReset() {
+    if (!confirmReset) { setConfirmReset(true); return; }
+    setResetting(true);
+    setMessage(null);
+    try {
+      const res = await api(role).adminReset();
+      setMessage({ type: "success", text: `รีเซ็ตสำเร็จ — เหลือข้อมูลตั้งต้น ${res.cancelledRows} งานยกเลิก, ${res.calendarEvents} งาน Confirmed` });
+      onReset?.();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setResetting(false);
+      setConfirmReset(false);
+    }
+  }
+
+  return (
+    <Card style={{ maxWidth: 560 }}>
+      <p style={{ color: ink, fontFamily: FONT }} className="text-sm font-semibold mb-1">เครื่องมือผู้ดูแลระบบ</p>
+      <p style={{ color: inkFaint }} className="text-xs mb-4">สำหรับล้างข้อมูลทดสอบก่อนให้คนอื่นทดลองใช้งานจริง</p>
+      {message && (
+        <p style={{ color: message.type === "error" ? redText : green }} className="text-xs mb-4">{message.text}</p>
+      )}
+
+      <div className="flex flex-col gap-3">
+        <div style={{ border: `1px solid ${line}`, borderRadius: 10 }} className="p-4">
+          <p style={{ color: ink }} className="text-sm font-medium mb-1">1. โหลดข้อมูลปัจจุบันออกก่อน (แนะนำ)</p>
+          <p style={{ color: inkFaint }} className="text-xs mb-3">ดาวน์โหลดข้อมูลทั้งหมดตอนนี้เป็นไฟล์ .json เก็บไว้ ก่อนล้างข้อมูล</p>
+          <button onClick={handleExport} disabled={exporting}
+            style={{ border: `1px solid ${line}`, color: ink, opacity: exporting ? 0.6 : 1 }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm">
+            <Download size={14} /> {exporting ? "กำลังโหลด..." : "ดาวน์โหลดข้อมูลปัจจุบัน"}
+          </button>
+        </div>
+
+        <div style={{ border: `1px solid ${line}`, borderRadius: 10 }} className="p-4">
+          <p style={{ color: ink }} className="text-sm font-medium mb-1">2. ล้างข้อมูลทดสอบทั้งหมด</p>
+          <p style={{ color: inkFaint }} className="text-xs mb-3">
+            ลบไฟล์ที่เคยอัปโหลด, งานที่กรอกเอง, และสถานะ Function Sheet ทั้งหมด กลับไปเหลือแค่ข้อมูล
+            ตัวอย่างตั้งต้น (Cancelled.xlsx + Function_Calendar.xlsx) — ย้อนกลับไม่ได้
+          </p>
+          <button onClick={handleReset} disabled={resetting}
+            style={{ background: confirmReset ? redText : "#fff", color: confirmReset ? "#fff" : redText, border: `1px solid ${redText}`, opacity: resetting ? 0.6 : 1 }}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium">
+            <Trash2 size={14} /> {resetting ? "กำลังล้างข้อมูล..." : confirmReset ? "ยืนยันล้างข้อมูล (กดอีกครั้ง)" : "ล้างข้อมูลทดสอบทั้งหมด"}
+          </button>
+          {confirmReset && !resetting && (
+            <button onClick={() => setConfirmReset(false)} style={{ color: inkSoft }} className="text-xs underline ml-3">ยกเลิก</button>
+          )}
+        </div>
+      </div>
     </Card>
   );
 }
@@ -823,7 +910,7 @@ export default function SalesSummaryDashboard() {
                 key={item.key}
                 onClick={() => {
                   setActiveNav(item.key);
-                  if (!["overview", "functionsheet", "history", "upload"].includes(item.key)) {
+                  if (!["overview", "functionsheet", "history", "upload", "admin"].includes(item.key)) {
                     showToast(`หน้า "${item.label}" ยังไม่ได้สร้างในต้นแบบนี้`);
                   }
                 }}
@@ -991,6 +1078,8 @@ export default function SalesSummaryDashboard() {
             <UploadHistoryPage role={role} />
           ) : activeNav === "upload" ? (
             <ManualEntryPage role={role} onSaved={() => loadSummary().catch((err) => setSummaryError(err.message))} />
+          ) : activeNav === "admin" ? (
+            <AdminPage role={role} onReset={() => loadSummary().catch((err) => setSummaryError(err.message))} />
           ) : !hasData ? (
             <EmptyState onUpload={triggerUpload} processing={processing} canUpload={canUpload} />
           ) : (

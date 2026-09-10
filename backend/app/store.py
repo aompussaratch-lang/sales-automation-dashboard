@@ -171,5 +171,37 @@ class Store:
     def get_job(self, job_id: str):
         return self.jobs.get(job_id)
 
+    def reset_to_seed(self):
+        """เครื่องมือผู้ดูแลระบบ: ล้างข้อมูลทดสอบทั้งหมด (ไฟล์ที่อัปโหลด, งานที่กรอกเอง, สถานะ Function
+        Sheet, jobs) กลับไปเป็นแค่ไฟล์ seed ดั้งเดิม — เหมือนรีสตาร์ท backend แต่ไม่ต้องรีสตาร์ทจริง"""
+        with self.lock:
+            self.cancelled_rows = []
+            self.calendar_events = []
+            self.upload_history = []
+            self.jobs = {}
+            self.function_sheet_issued = {}
+            self.drive_status = {"status": "synced", "lastSyncAt": now_iso()}
+        self._seed()
+
+    def export_snapshot(self) -> dict:
+        """เครื่องมือผู้ดูแลระบบ: export ข้อมูลดิบทั้งหมดในระบบตอนนี้เป็น JSON (โหลดเก็บไว้ก่อนรีเซ็ตได้)"""
+        def _jsonable(rows):
+            out = []
+            for r in rows:
+                d = dict(r)
+                for k, v in d.items():
+                    if hasattr(v, "isoformat"):
+                        d[k] = v.isoformat()
+                out.append(d)
+            return out
+
+        return {
+            "exportedAt": now_iso(),
+            "cancelledRows": _jsonable(self.cancelled_rows),
+            "calendarEvents": _jsonable(self.calendar_events),
+            "uploadHistory": self.upload_history,
+            "functionSheetIssued": self.function_sheet_issued,
+        }
+
 
 store = Store()
